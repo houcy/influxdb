@@ -467,7 +467,6 @@ type floatFillIterator struct {
 	startTime int64
 	endTime   int64
 	auxFields []interface{}
-	done      bool
 	opt       IteratorOptions
 
 	window struct {
@@ -488,9 +487,9 @@ func newFloatFillIterator(input FloatIterator, expr Expr, opt IteratorOptions) *
 	var startTime, endTime int64
 	if opt.Ascending {
 		startTime, _ = opt.Window(opt.StartTime)
-		_, endTime = opt.Window(opt.EndTime)
+		endTime, _ = opt.Window(opt.EndTime)
 	} else {
-		_, startTime = opt.Window(opt.EndTime)
+		startTime, _ = opt.Window(opt.EndTime)
 		endTime, _ = opt.Window(opt.StartTime)
 	}
 
@@ -512,7 +511,11 @@ func newFloatFillIterator(input FloatIterator, expr Expr, opt IteratorOptions) *
 		itr.window.name, itr.window.tags = p.Name, p.Tags
 		itr.window.time = itr.startTime
 	} else {
-		itr.window.time = itr.endTime
+		if opt.Ascending {
+			itr.window.time = itr.endTime + 1
+		} else {
+			itr.window.time = itr.endTime - 1
+		}
 	}
 	return itr
 }
@@ -528,7 +531,7 @@ func (itr *floatFillIterator) Next() *FloatPoint {
 		// If we are inside of an interval, unread the point and continue below to
 		// constructing a new point.
 		if itr.opt.Ascending {
-			if itr.window.time < itr.endTime {
+			if itr.window.time <= itr.endTime {
 				itr.input.unread(p)
 				p = nil
 				break
@@ -555,7 +558,7 @@ func (itr *floatFillIterator) Next() *FloatPoint {
 	}
 
 	// Check if the point is our next expected point.
-	if p == nil || p.Time > itr.window.time {
+	if p == nil || (itr.opt.Ascending && p.Time > itr.window.time) || (!itr.opt.Ascending && p.Time < itr.window.time) {
 		if p != nil {
 			itr.input.unread(p)
 		}
@@ -899,7 +902,7 @@ func (itr *floatReduceFloatIterator) reduce() []FloatPoint {
 	return a
 }
 
-// floatStreamFloatIterator
+// floatStreamFloatIterator streams inputs into the iterator and emits points gradually.
 type floatStreamFloatIterator struct {
 	input  *bufFloatIterator
 	create func() (FloatPointAggregator, FloatPointEmitter)
@@ -908,6 +911,7 @@ type floatStreamFloatIterator struct {
 	points []FloatPoint
 }
 
+// newFloatStreamFloatIterator returns a new instance of floatStreamFloatIterator.
 func newFloatStreamFloatIterator(input FloatIterator, createFn func() (FloatPointAggregator, FloatPointEmitter), opt IteratorOptions) *floatStreamFloatIterator {
 	return &floatStreamFloatIterator{
 		input:  newBufFloatIterator(input),
@@ -1123,7 +1127,7 @@ func (itr *floatReduceIntegerIterator) reduce() []IntegerPoint {
 	return a
 }
 
-// floatStreamIntegerIterator
+// floatStreamIntegerIterator streams inputs into the iterator and emits points gradually.
 type floatStreamIntegerIterator struct {
 	input  *bufFloatIterator
 	create func() (FloatPointAggregator, IntegerPointEmitter)
@@ -1132,6 +1136,7 @@ type floatStreamIntegerIterator struct {
 	points []IntegerPoint
 }
 
+// newFloatStreamIntegerIterator returns a new instance of floatStreamIntegerIterator.
 func newFloatStreamIntegerIterator(input FloatIterator, createFn func() (FloatPointAggregator, IntegerPointEmitter), opt IteratorOptions) *floatStreamIntegerIterator {
 	return &floatStreamIntegerIterator{
 		input:  newBufFloatIterator(input),
@@ -1347,7 +1352,7 @@ func (itr *floatReduceStringIterator) reduce() []StringPoint {
 	return a
 }
 
-// floatStreamStringIterator
+// floatStreamStringIterator streams inputs into the iterator and emits points gradually.
 type floatStreamStringIterator struct {
 	input  *bufFloatIterator
 	create func() (FloatPointAggregator, StringPointEmitter)
@@ -1356,6 +1361,7 @@ type floatStreamStringIterator struct {
 	points []StringPoint
 }
 
+// newFloatStreamStringIterator returns a new instance of floatStreamStringIterator.
 func newFloatStreamStringIterator(input FloatIterator, createFn func() (FloatPointAggregator, StringPointEmitter), opt IteratorOptions) *floatStreamStringIterator {
 	return &floatStreamStringIterator{
 		input:  newBufFloatIterator(input),
@@ -1571,7 +1577,7 @@ func (itr *floatReduceBooleanIterator) reduce() []BooleanPoint {
 	return a
 }
 
-// floatStreamBooleanIterator
+// floatStreamBooleanIterator streams inputs into the iterator and emits points gradually.
 type floatStreamBooleanIterator struct {
 	input  *bufFloatIterator
 	create func() (FloatPointAggregator, BooleanPointEmitter)
@@ -1580,6 +1586,7 @@ type floatStreamBooleanIterator struct {
 	points []BooleanPoint
 }
 
+// newFloatStreamBooleanIterator returns a new instance of floatStreamBooleanIterator.
 func newFloatStreamBooleanIterator(input FloatIterator, createFn func() (FloatPointAggregator, BooleanPointEmitter), opt IteratorOptions) *floatStreamBooleanIterator {
 	return &floatStreamBooleanIterator{
 		input:  newBufFloatIterator(input),
@@ -2279,7 +2286,6 @@ type integerFillIterator struct {
 	startTime int64
 	endTime   int64
 	auxFields []interface{}
-	done      bool
 	opt       IteratorOptions
 
 	window struct {
@@ -2300,9 +2306,9 @@ func newIntegerFillIterator(input IntegerIterator, expr Expr, opt IteratorOption
 	var startTime, endTime int64
 	if opt.Ascending {
 		startTime, _ = opt.Window(opt.StartTime)
-		_, endTime = opt.Window(opt.EndTime)
+		endTime, _ = opt.Window(opt.EndTime)
 	} else {
-		_, startTime = opt.Window(opt.EndTime)
+		startTime, _ = opt.Window(opt.EndTime)
 		endTime, _ = opt.Window(opt.StartTime)
 	}
 
@@ -2324,7 +2330,11 @@ func newIntegerFillIterator(input IntegerIterator, expr Expr, opt IteratorOption
 		itr.window.name, itr.window.tags = p.Name, p.Tags
 		itr.window.time = itr.startTime
 	} else {
-		itr.window.time = itr.endTime
+		if opt.Ascending {
+			itr.window.time = itr.endTime + 1
+		} else {
+			itr.window.time = itr.endTime - 1
+		}
 	}
 	return itr
 }
@@ -2340,7 +2350,7 @@ func (itr *integerFillIterator) Next() *IntegerPoint {
 		// If we are inside of an interval, unread the point and continue below to
 		// constructing a new point.
 		if itr.opt.Ascending {
-			if itr.window.time < itr.endTime {
+			if itr.window.time <= itr.endTime {
 				itr.input.unread(p)
 				p = nil
 				break
@@ -2367,7 +2377,7 @@ func (itr *integerFillIterator) Next() *IntegerPoint {
 	}
 
 	// Check if the point is our next expected point.
-	if p == nil || p.Time > itr.window.time {
+	if p == nil || (itr.opt.Ascending && p.Time > itr.window.time) || (!itr.opt.Ascending && p.Time < itr.window.time) {
 		if p != nil {
 			itr.input.unread(p)
 		}
@@ -2708,7 +2718,7 @@ func (itr *integerReduceFloatIterator) reduce() []FloatPoint {
 	return a
 }
 
-// integerStreamFloatIterator
+// integerStreamFloatIterator streams inputs into the iterator and emits points gradually.
 type integerStreamFloatIterator struct {
 	input  *bufIntegerIterator
 	create func() (IntegerPointAggregator, FloatPointEmitter)
@@ -2717,6 +2727,7 @@ type integerStreamFloatIterator struct {
 	points []FloatPoint
 }
 
+// newIntegerStreamFloatIterator returns a new instance of integerStreamFloatIterator.
 func newIntegerStreamFloatIterator(input IntegerIterator, createFn func() (IntegerPointAggregator, FloatPointEmitter), opt IteratorOptions) *integerStreamFloatIterator {
 	return &integerStreamFloatIterator{
 		input:  newBufIntegerIterator(input),
@@ -2932,7 +2943,7 @@ func (itr *integerReduceIntegerIterator) reduce() []IntegerPoint {
 	return a
 }
 
-// integerStreamIntegerIterator
+// integerStreamIntegerIterator streams inputs into the iterator and emits points gradually.
 type integerStreamIntegerIterator struct {
 	input  *bufIntegerIterator
 	create func() (IntegerPointAggregator, IntegerPointEmitter)
@@ -2941,6 +2952,7 @@ type integerStreamIntegerIterator struct {
 	points []IntegerPoint
 }
 
+// newIntegerStreamIntegerIterator returns a new instance of integerStreamIntegerIterator.
 func newIntegerStreamIntegerIterator(input IntegerIterator, createFn func() (IntegerPointAggregator, IntegerPointEmitter), opt IteratorOptions) *integerStreamIntegerIterator {
 	return &integerStreamIntegerIterator{
 		input:  newBufIntegerIterator(input),
@@ -3156,7 +3168,7 @@ func (itr *integerReduceStringIterator) reduce() []StringPoint {
 	return a
 }
 
-// integerStreamStringIterator
+// integerStreamStringIterator streams inputs into the iterator and emits points gradually.
 type integerStreamStringIterator struct {
 	input  *bufIntegerIterator
 	create func() (IntegerPointAggregator, StringPointEmitter)
@@ -3165,6 +3177,7 @@ type integerStreamStringIterator struct {
 	points []StringPoint
 }
 
+// newIntegerStreamStringIterator returns a new instance of integerStreamStringIterator.
 func newIntegerStreamStringIterator(input IntegerIterator, createFn func() (IntegerPointAggregator, StringPointEmitter), opt IteratorOptions) *integerStreamStringIterator {
 	return &integerStreamStringIterator{
 		input:  newBufIntegerIterator(input),
@@ -3380,7 +3393,7 @@ func (itr *integerReduceBooleanIterator) reduce() []BooleanPoint {
 	return a
 }
 
-// integerStreamBooleanIterator
+// integerStreamBooleanIterator streams inputs into the iterator and emits points gradually.
 type integerStreamBooleanIterator struct {
 	input  *bufIntegerIterator
 	create func() (IntegerPointAggregator, BooleanPointEmitter)
@@ -3389,6 +3402,7 @@ type integerStreamBooleanIterator struct {
 	points []BooleanPoint
 }
 
+// newIntegerStreamBooleanIterator returns a new instance of integerStreamBooleanIterator.
 func newIntegerStreamBooleanIterator(input IntegerIterator, createFn func() (IntegerPointAggregator, BooleanPointEmitter), opt IteratorOptions) *integerStreamBooleanIterator {
 	return &integerStreamBooleanIterator{
 		input:  newBufIntegerIterator(input),
@@ -4088,7 +4102,6 @@ type stringFillIterator struct {
 	startTime int64
 	endTime   int64
 	auxFields []interface{}
-	done      bool
 	opt       IteratorOptions
 
 	window struct {
@@ -4109,9 +4122,9 @@ func newStringFillIterator(input StringIterator, expr Expr, opt IteratorOptions)
 	var startTime, endTime int64
 	if opt.Ascending {
 		startTime, _ = opt.Window(opt.StartTime)
-		_, endTime = opt.Window(opt.EndTime)
+		endTime, _ = opt.Window(opt.EndTime)
 	} else {
-		_, startTime = opt.Window(opt.EndTime)
+		startTime, _ = opt.Window(opt.EndTime)
 		endTime, _ = opt.Window(opt.StartTime)
 	}
 
@@ -4133,7 +4146,11 @@ func newStringFillIterator(input StringIterator, expr Expr, opt IteratorOptions)
 		itr.window.name, itr.window.tags = p.Name, p.Tags
 		itr.window.time = itr.startTime
 	} else {
-		itr.window.time = itr.endTime
+		if opt.Ascending {
+			itr.window.time = itr.endTime + 1
+		} else {
+			itr.window.time = itr.endTime - 1
+		}
 	}
 	return itr
 }
@@ -4149,7 +4166,7 @@ func (itr *stringFillIterator) Next() *StringPoint {
 		// If we are inside of an interval, unread the point and continue below to
 		// constructing a new point.
 		if itr.opt.Ascending {
-			if itr.window.time < itr.endTime {
+			if itr.window.time <= itr.endTime {
 				itr.input.unread(p)
 				p = nil
 				break
@@ -4176,7 +4193,7 @@ func (itr *stringFillIterator) Next() *StringPoint {
 	}
 
 	// Check if the point is our next expected point.
-	if p == nil || p.Time > itr.window.time {
+	if p == nil || (itr.opt.Ascending && p.Time > itr.window.time) || (!itr.opt.Ascending && p.Time < itr.window.time) {
 		if p != nil {
 			itr.input.unread(p)
 		}
@@ -4517,7 +4534,7 @@ func (itr *stringReduceFloatIterator) reduce() []FloatPoint {
 	return a
 }
 
-// stringStreamFloatIterator
+// stringStreamFloatIterator streams inputs into the iterator and emits points gradually.
 type stringStreamFloatIterator struct {
 	input  *bufStringIterator
 	create func() (StringPointAggregator, FloatPointEmitter)
@@ -4526,6 +4543,7 @@ type stringStreamFloatIterator struct {
 	points []FloatPoint
 }
 
+// newStringStreamFloatIterator returns a new instance of stringStreamFloatIterator.
 func newStringStreamFloatIterator(input StringIterator, createFn func() (StringPointAggregator, FloatPointEmitter), opt IteratorOptions) *stringStreamFloatIterator {
 	return &stringStreamFloatIterator{
 		input:  newBufStringIterator(input),
@@ -4741,7 +4759,7 @@ func (itr *stringReduceIntegerIterator) reduce() []IntegerPoint {
 	return a
 }
 
-// stringStreamIntegerIterator
+// stringStreamIntegerIterator streams inputs into the iterator and emits points gradually.
 type stringStreamIntegerIterator struct {
 	input  *bufStringIterator
 	create func() (StringPointAggregator, IntegerPointEmitter)
@@ -4750,6 +4768,7 @@ type stringStreamIntegerIterator struct {
 	points []IntegerPoint
 }
 
+// newStringStreamIntegerIterator returns a new instance of stringStreamIntegerIterator.
 func newStringStreamIntegerIterator(input StringIterator, createFn func() (StringPointAggregator, IntegerPointEmitter), opt IteratorOptions) *stringStreamIntegerIterator {
 	return &stringStreamIntegerIterator{
 		input:  newBufStringIterator(input),
@@ -4965,7 +4984,7 @@ func (itr *stringReduceStringIterator) reduce() []StringPoint {
 	return a
 }
 
-// stringStreamStringIterator
+// stringStreamStringIterator streams inputs into the iterator and emits points gradually.
 type stringStreamStringIterator struct {
 	input  *bufStringIterator
 	create func() (StringPointAggregator, StringPointEmitter)
@@ -4974,6 +4993,7 @@ type stringStreamStringIterator struct {
 	points []StringPoint
 }
 
+// newStringStreamStringIterator returns a new instance of stringStreamStringIterator.
 func newStringStreamStringIterator(input StringIterator, createFn func() (StringPointAggregator, StringPointEmitter), opt IteratorOptions) *stringStreamStringIterator {
 	return &stringStreamStringIterator{
 		input:  newBufStringIterator(input),
@@ -5189,7 +5209,7 @@ func (itr *stringReduceBooleanIterator) reduce() []BooleanPoint {
 	return a
 }
 
-// stringStreamBooleanIterator
+// stringStreamBooleanIterator streams inputs into the iterator and emits points gradually.
 type stringStreamBooleanIterator struct {
 	input  *bufStringIterator
 	create func() (StringPointAggregator, BooleanPointEmitter)
@@ -5198,6 +5218,7 @@ type stringStreamBooleanIterator struct {
 	points []BooleanPoint
 }
 
+// newStringStreamBooleanIterator returns a new instance of stringStreamBooleanIterator.
 func newStringStreamBooleanIterator(input StringIterator, createFn func() (StringPointAggregator, BooleanPointEmitter), opt IteratorOptions) *stringStreamBooleanIterator {
 	return &stringStreamBooleanIterator{
 		input:  newBufStringIterator(input),
@@ -5897,7 +5918,6 @@ type booleanFillIterator struct {
 	startTime int64
 	endTime   int64
 	auxFields []interface{}
-	done      bool
 	opt       IteratorOptions
 
 	window struct {
@@ -5918,9 +5938,9 @@ func newBooleanFillIterator(input BooleanIterator, expr Expr, opt IteratorOption
 	var startTime, endTime int64
 	if opt.Ascending {
 		startTime, _ = opt.Window(opt.StartTime)
-		_, endTime = opt.Window(opt.EndTime)
+		endTime, _ = opt.Window(opt.EndTime)
 	} else {
-		_, startTime = opt.Window(opt.EndTime)
+		startTime, _ = opt.Window(opt.EndTime)
 		endTime, _ = opt.Window(opt.StartTime)
 	}
 
@@ -5942,7 +5962,11 @@ func newBooleanFillIterator(input BooleanIterator, expr Expr, opt IteratorOption
 		itr.window.name, itr.window.tags = p.Name, p.Tags
 		itr.window.time = itr.startTime
 	} else {
-		itr.window.time = itr.endTime
+		if opt.Ascending {
+			itr.window.time = itr.endTime + 1
+		} else {
+			itr.window.time = itr.endTime - 1
+		}
 	}
 	return itr
 }
@@ -5958,7 +5982,7 @@ func (itr *booleanFillIterator) Next() *BooleanPoint {
 		// If we are inside of an interval, unread the point and continue below to
 		// constructing a new point.
 		if itr.opt.Ascending {
-			if itr.window.time < itr.endTime {
+			if itr.window.time <= itr.endTime {
 				itr.input.unread(p)
 				p = nil
 				break
@@ -5985,7 +6009,7 @@ func (itr *booleanFillIterator) Next() *BooleanPoint {
 	}
 
 	// Check if the point is our next expected point.
-	if p == nil || p.Time > itr.window.time {
+	if p == nil || (itr.opt.Ascending && p.Time > itr.window.time) || (!itr.opt.Ascending && p.Time < itr.window.time) {
 		if p != nil {
 			itr.input.unread(p)
 		}
@@ -6326,7 +6350,7 @@ func (itr *booleanReduceFloatIterator) reduce() []FloatPoint {
 	return a
 }
 
-// booleanStreamFloatIterator
+// booleanStreamFloatIterator streams inputs into the iterator and emits points gradually.
 type booleanStreamFloatIterator struct {
 	input  *bufBooleanIterator
 	create func() (BooleanPointAggregator, FloatPointEmitter)
@@ -6335,6 +6359,7 @@ type booleanStreamFloatIterator struct {
 	points []FloatPoint
 }
 
+// newBooleanStreamFloatIterator returns a new instance of booleanStreamFloatIterator.
 func newBooleanStreamFloatIterator(input BooleanIterator, createFn func() (BooleanPointAggregator, FloatPointEmitter), opt IteratorOptions) *booleanStreamFloatIterator {
 	return &booleanStreamFloatIterator{
 		input:  newBufBooleanIterator(input),
@@ -6550,7 +6575,7 @@ func (itr *booleanReduceIntegerIterator) reduce() []IntegerPoint {
 	return a
 }
 
-// booleanStreamIntegerIterator
+// booleanStreamIntegerIterator streams inputs into the iterator and emits points gradually.
 type booleanStreamIntegerIterator struct {
 	input  *bufBooleanIterator
 	create func() (BooleanPointAggregator, IntegerPointEmitter)
@@ -6559,6 +6584,7 @@ type booleanStreamIntegerIterator struct {
 	points []IntegerPoint
 }
 
+// newBooleanStreamIntegerIterator returns a new instance of booleanStreamIntegerIterator.
 func newBooleanStreamIntegerIterator(input BooleanIterator, createFn func() (BooleanPointAggregator, IntegerPointEmitter), opt IteratorOptions) *booleanStreamIntegerIterator {
 	return &booleanStreamIntegerIterator{
 		input:  newBufBooleanIterator(input),
@@ -6774,7 +6800,7 @@ func (itr *booleanReduceStringIterator) reduce() []StringPoint {
 	return a
 }
 
-// booleanStreamStringIterator
+// booleanStreamStringIterator streams inputs into the iterator and emits points gradually.
 type booleanStreamStringIterator struct {
 	input  *bufBooleanIterator
 	create func() (BooleanPointAggregator, StringPointEmitter)
@@ -6783,6 +6809,7 @@ type booleanStreamStringIterator struct {
 	points []StringPoint
 }
 
+// newBooleanStreamStringIterator returns a new instance of booleanStreamStringIterator.
 func newBooleanStreamStringIterator(input BooleanIterator, createFn func() (BooleanPointAggregator, StringPointEmitter), opt IteratorOptions) *booleanStreamStringIterator {
 	return &booleanStreamStringIterator{
 		input:  newBufBooleanIterator(input),
@@ -6998,7 +7025,7 @@ func (itr *booleanReduceBooleanIterator) reduce() []BooleanPoint {
 	return a
 }
 
-// booleanStreamBooleanIterator
+// booleanStreamBooleanIterator streams inputs into the iterator and emits points gradually.
 type booleanStreamBooleanIterator struct {
 	input  *bufBooleanIterator
 	create func() (BooleanPointAggregator, BooleanPointEmitter)
@@ -7007,6 +7034,7 @@ type booleanStreamBooleanIterator struct {
 	points []BooleanPoint
 }
 
+// newBooleanStreamBooleanIterator returns a new instance of booleanStreamBooleanIterator.
 func newBooleanStreamBooleanIterator(input BooleanIterator, createFn func() (BooleanPointAggregator, BooleanPointEmitter), opt IteratorOptions) *booleanStreamBooleanIterator {
 	return &booleanStreamBooleanIterator{
 		input:  newBufBooleanIterator(input),
