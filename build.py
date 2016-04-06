@@ -10,8 +10,7 @@ import tempfile
 import hashlib
 import re
 import logging
-
-LOG_LEVEL = logging.INFO
+import argparse
 
 ################
 #### InfluxDB Variables
@@ -100,6 +99,15 @@ supported_packages = {
 ################
 #### InfluxDB Functions
 ################
+
+def print_banner():
+    logging.info("""
+  ___       __ _          ___  ___
+ |_ _|_ _  / _| |_  ___ _|   \\| _ )
+  | || ' \\|  _| | || \\ \\ / |) | _ \\
+ |___|_||_|_| |_|\\_,_/_\\_\\___/|___/
+  Build Script
+""")
 
 def create_package_fs(build_root):
     logging.debug("Creating package filesystem at location: {}".format(build_root))
@@ -371,7 +379,7 @@ def build(version=None,
         # If a release candidate, update the version information accordingly
         version = "{}rc{}".format(version, rc)
     logging.info("Using version '{}' for build.".format(version))
-    
+
     tmp_build_dir = create_temp_dir()
     for b, c in targets.items():
         logging.info("Building target: {}".format(b))
@@ -562,14 +570,15 @@ def build_packages(build_output, version, nightly=False, rc=None, iteration=1, s
                             run("mv {}.tar.gz {}".format(os.path.join(build_root, name), current_location), shell=True)
                             outfile = os.path.join(current_location, name + ".tar.gz")
                             outfiles.append(outfile)
-                            print("MD5({}) = {}".format(outfile, generate_md5_from_file(outfile)))
+                            logging.info("MD5({}) = {}".format(outfile.split('/')[-1:][0],
+                                                               generate_md5_from_file(outfile)))
                         elif package_type == 'zip':
                             zip_command = "cd {} && zip -r {}.zip ./*".format(build_root, name)
                             run(zip_command, shell=True)
                             run("mv {}.zip {}".format(os.path.join(build_root, name), current_location), shell=True)
                             outfile = os.path.join(current_location, name + ".zip")
                             outfiles.append(outfile)
-                            logging.info("MD5({}) = {}".format(outfile.split(os.pathsep)[-1:],
+                            logging.info("MD5({}) = {}".format(outfile.split('/')[-1:][0],
                                                                generate_md5_from_file(outfile)))
                     elif package_type not in ['zip', 'tar'] and static:
                         logging.info("Skipping package type '{}' for static builds.".format(package_type))
@@ -599,7 +608,7 @@ def build_packages(build_output, version, nightly=False, rc=None, iteration=1, s
                                                       outfile.replace("{}-{}".format(version, iteration), "nightly"))
                             outfiles.append(os.path.join(os.getcwd(), outfile))
                             # Display MD5 hash for generated package
-                            logging.info("MD5({}) = {}".format(outfile.split(os.pathsep)[-1:],
+                            logging.info("MD5({}) = {}".format(outfile.split('/')[-1:][0],
                                                                generate_md5_from_file(outfile)))
         logging.debug("Produced package files: {}".format(outfiles))
         return outfiles
@@ -607,258 +616,113 @@ def build_packages(build_output, version, nightly=False, rc=None, iteration=1, s
         # Cleanup
         shutil.rmtree(tmp_build_dir)
 
-def print_usage():
-    print("Usage: ./build.py [options]")
-    print("")
-    print("Options:")
-    print("\t --outdir=<path> \n\t\t- Send build output to a specified path. Defaults to ./build.")
-    print("\t --arch=<arch> \n\t\t- Build for specified architecture. Acceptable values: x86_64|amd64, 386|i386, arm, or all")
-    print("\t --platform=<platform> \n\t\t- Build for specified platform. Acceptable values: linux, windows, darwin, or all")
-    print("\t --version=<version> \n\t\t- Version information to apply to build metadata. If not specified, will be pulled from repo tag.")
-    print("\t --commit=<commit> \n\t\t- Use specific commit for build (currently a NOOP).")
-    print("\t --branch=<branch> \n\t\t- Build from a specific branch (currently a NOOP).")
-    print("\t --rc=<rc number> \n\t\t- Whether or not the build is a release candidate (affects version information).")
-    print("\t --iteration=<iteration number> \n\t\t- The iteration to display on the package output (defaults to 0 for RC's, and 1 otherwise).")
-    print("\t --race \n\t\t- Whether the produced build should have race detection enabled.")
-    print("\t --package \n\t\t- Whether the produced builds should be packaged for the target platform(s).")
-    print("\t --nightly \n\t\t- Whether the produced build is a nightly (affects version information).")
-    print("\t --update \n\t\t- Whether dependencies should be updated prior to building.")
-    print("\t --test \n\t\t- Run Go tests. Will not produce a build.")
-    print("\t --parallel \n\t\t- Run Go tests in parallel up to the count specified.")
-    print("\t --generate \n\t\t- Run `go generate`.")
-    print("\t --timeout \n\t\t- Timeout for Go tests. Defaults to 480s.")
-    print("\t --clean \n\t\t- Clean the build output directory prior to creating build.")
-    print("\t --no-get \n\t\t- Do not run `go get` before building.")
-    print("\t --static \n\t\t- Generate statically-linked binaries.")
-    print("\t --bucket=<S3 bucket>\n\t\t- Full path of the bucket to upload packages to (must also specify --upload).")
-    print("\t --sign \n\t\t- Sign output packages using GPG.")
-    print("\t --debug \n\t\t- Use debug output.")
-    print("")
-
-def main():
+def main(args):
     global PACKAGE_NAME
 
-    # Command-line arguments
-    outdir = "build"
-    commit = None
-    target_platform = None
-    target_arch = None
-    nightly = False
-    race = False
-    branch = None
-    version = get_current_version()
-    rc = get_current_rc()
-    package = False
-    update = False
-    clean = False
-    upload = False
-    test = False
-    parallel = None
-    timeout = None
-    iteration = 1
-    no_vet = False
-    run_get = True
-    upload_bucket = None
-    generate = False
-    no_stash = False
-    static = False
-    build_tags = []
-    sign_packages = False
-    upload_overwrite = False
-
-    for arg in sys.argv[1:]:
-        if '--outdir' in arg:
-            # Output directory. If none is specified, then builds will be placed in the same directory.
-            outdir = arg.split("=")[1]
-        if '--commit' in arg:
-            # Commit to build from. If none is specified, then it will build from the most recent commit.
-            commit = arg.split("=")[1]
-        if '--branch' in arg:
-            # Branch to build from. If none is specified, then it will build from the current branch.
-            branch = arg.split("=")[1]
-        elif '--arch' in arg:
-            # Target architecture. If none is specified, then it will build for the current arch.
-            target_arch = arg.split("=")[1]
-        elif '--platform' in arg:
-            # Target platform. If none is specified, then it will build for the current platform.
-            target_platform = arg.split("=")[1]
-        elif '--version' in arg:
-            # Version to assign to this build (0.9.5, etc)
-            version = arg.split("=")[1]
-        elif '--rc' in arg:
-            # Signifies that this is a release candidate build.
-            rc = arg.split("=")[1]
-        elif '--race' in arg:
-            # Signifies that race detection should be enabled.
-            race = True
-        elif '--package' in arg:
-            # Signifies that packages should be built.
-            package = True
-            # If packaging do not allow stashing of local changes
-            no_stash = True
-        elif '--nightly' in arg:
-            # Signifies that this is a nightly build.
-            nightly = True
-        elif '--update' in arg:
-            # Signifies that dependencies should be updated.
-            update = True
-        elif '--upload' in arg:
-            # Signifies that the resulting packages should be uploaded to S3
-            upload = True
-        elif '--overwrite' in arg:
-            # Signifies that the resulting packages should be uploaded to S3
-            upload_overwrite = True
-        elif '--test' in arg:
-            # Run tests and exit
-            test = True
-        elif '--parallel' in arg:
-            # Set parallel for tests.
-            parallel = int(arg.split("=")[1])
-        elif '--timeout' in arg:
-            # Set timeout for tests.
-            timeout = arg.split("=")[1]
-        elif '--clean' in arg:
-            # Signifies that the outdir should be deleted before building
-            clean = True
-        elif '--iteration' in arg:
-            iteration = arg.split("=")[1]
-        elif '--no-vet' in arg:
-            no_vet = True
-        elif '--no-get' in arg:
-            run_get = False
-        elif '--bucket' in arg:
-            # The bucket to upload the packages to, relies on boto
-            upload_bucket = arg.split("=")[1]
-        elif '--no-stash' in arg:
-            # Do not stash uncommited changes
-            # Fail if uncommited changes exist
-            no_stash = True
-        elif '--generate' in arg:
-            generate = True
-        elif '--build-tags' in arg:
-            for t in arg.split("=")[1].split(","):
-                build_tags.append(t)
-        elif '--name' in arg:
-            # Change the output package name
-            PACKAGE_NAME = arg.split("=")[1]
-        elif '--static' in arg:
-            static = True
-        elif '--sign' in arg:
-            sign_packages = True
-        elif '--debug' in arg:
-            # Setting log level is handled elsewhere
-            pass
-        elif '--help' in arg:
-            print_usage()
-            return 0
-        else:
-            print("!! Unknown argument: {}".format(arg))
-            print_usage()
-            return 1
-
-    if nightly and rc:
+    if args.version is None:
+        args.version = get_current_version()        
+    
+    if args.nightly and args.rc:
         logging.error("Cannot be both a nightly and a release candidate.")
         return 1
 
-    if nightly:
+    if args.nightly:
         # In order to cleanly delineate nightly version, we are adding the epoch timestamp
         # to the version so that version numbers are always greater than the previous nightly.
-        version = "{}~n{}".format(version,
-                                  datetime.utcnow().strftime("%Y%m%d%H%M"))
-        iteration = 0
-    elif rc:
-        iteration = 0
+        args.version = "{}~n{}".format(args.version,
+                                       datetime.utcnow().strftime("%Y%m%d%H%M"))
+        args.iteration = 0
+    elif args.rc:
+        args.iteration = 0
 
     # Pre-build checks
     check_environ()
     if not check_prereqs():
         return 1
 
-    if not commit:
-        commit = get_current_commit(short=True)
-    if not branch:
-        branch = get_current_branch()
-    if not target_arch:
+    commit = get_current_commit(short=True)
+    branch = get_current_branch()
+    if args.arch is None:
         system_arch = get_system_arch()
         if 'arm' in system_arch:
             # Prevent uname from reporting ARM arch (eg 'armv7l')
-            target_arch = "arm"
+            args.arch = "arm"
         else:
-            target_arch = system_arch
-            if target_arch == '386':
-                target_arch = 'i386'
-            elif target_arch == 'x86_64':
-                target_arch = 'amd64'
-    if target_platform:
-        if target_platform not in supported_builds and target_platform != 'all':
+            args.arch = system_arch
+            if args.arch == '386':
+                args.arch = 'i386'
+            elif args.arch == 'x86_64':
+                args.arch = 'amd64'
+    if args.platform:
+        if args.platform not in supported_builds and args.platform != 'all':
             logging.error("Invalid build platform: {}".format(target_platform))
             return 1
     else:
-        target_platform = get_system_platform()
+        args.platform = get_system_platform()
 
     build_output = {}
 
-    if run_get:
-        if not go_get(branch, update=update, no_stash=no_stash):
+    if not args.no_get:
+        if not go_get(branch, update=args.update, no_stash=args.no_stash):
             return 1
 
-    if generate:
+    if args.generate:
         if not run_generate():
             return 1
 
-    if test:
-        if not run_tests(race, parallel, timeout, no_vet):
+    if args.test:
+        if not run_tests(args.race, args.parallel, args.timeout, args.no_vet):
             return 1
         return 0
 
     platforms = []
     single_build = True
-    if target_platform == 'all':
+    if args.platform == 'all':
         platforms = supported_builds.keys()
         single_build = False
     else:
-        platforms = [target_platform]
+        platforms = [args.platform]
 
     for platform in platforms:
         build_output.update( { platform : {} } )
         archs = []
-        if target_arch == "all":
+        if args.arch == "all":
             single_build = False
             archs = supported_builds.get(platform)
         else:
-            archs = [target_arch]
+            archs = [args.arch]
 
         for arch in archs:
-            od = outdir
+            od = args.outdir
             if not single_build:
-                od = os.path.join(outdir, platform, arch)
-            if not build(version=version,
+                od = os.path.join(args.outdir, platform, arch)
+            if not build(version=args.version,
                          branch=branch,
                          commit=commit,
                          platform=platform,
                          arch=arch,
-                         nightly=nightly,
-                         rc=rc,
-                         race=race,
-                         clean=clean,
+                         nightly=args.nightly,
+                         rc=args.rc,
+                         race=args.race,
+                         clean=args.clean,
                          outdir=od,
-                         tags=build_tags,
-                         static=static):
+                         tags=args.build_tags.split(','),
+                         static=args.static):
                 return 1
             build_output.get(platform).update( { arch : od } )
 
     # Build packages
-    if package:
+    if args.package:
         if not check_path_for("fpm"):
             logging.error("FPM ruby gem required for packaging. Stopping.")
             return 1
         packages = build_packages(build_output,
-                                  version,
-                                  nightly=nightly,
-                                  rc=rc,
-                                  iteration=iteration,
-                                  static=static)
-        if sign_packages:
+                                  args.version,
+                                  nightly=args.nightly,
+                                  rc=args.rc,
+                                  iteration=args.iteration,
+                                  static=args.static)
+        if args.sign:
             logging.debug("Generating GPG signatures for packages: {}".format(packages))
             sigs = [] # retain signatures so they can be uploaded with packages
             for p in packages:
@@ -868,18 +732,111 @@ def main():
                     logging.error("Creation of signature for package [{}] failed!".format(p))
                     return 1
             packages += sigs
-        if upload:
+        if args.upload:
             logging.debug("Files staged for upload: {}".format(packages))
-            if nightly or upload_overwrite:
+            if args.nightly or args.upload_overwrite:
                 upload_packages(packages, bucket_name=upload_bucket, overwrite=True)
             else:
                 upload_packages(packages, bucket_name=upload_bucket, overwrite=False)
     return 0
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='InfluxDB build and packaging script.')
+    parser.add_argument('--verbose','-v','--debug',
+                        action='store_true',
+                        help='Use debug output')
+    parser.add_argument('--outdir', '-o',
+                        metavar='<output directory>',
+                        default='./build/',
+                        type=os.path.abspath,
+                        help='Output directory')
+    parser.add_argument('--name', '-n',
+                        metavar='<name>',
+                        type=str,
+                        help='Name to use for package name (when package is specified)')
+    parser.add_argument('--arch',
+                        metavar='<amd64|i386|armhf|arm64|armel|all>',
+                        type=str,
+                        help='Target architecture for build output')
+    parser.add_argument('--platform',
+                        metavar='<linux|darwin|windows|all>',
+                        type=str,
+                        help='Target platform for build output')
+    parser.add_argument('--version',
+                        metavar='<version>',
+                        type=str,
+                        help='Version information to apply to build output (ex: 0.12.0)')
+    parser.add_argument('--rc',
+                        metavar='<release candidate>',
+                        type=int,
+                        help='Release Candidate (RC) version to apply to build output')
+    parser.add_argument('--iteration',
+                        metavar='<package iteration>',
+                        type=int,
+                        help='Package iteration to apply to build output (defaults to 1)')
+    parser.add_argument('--nightly',
+                        action='store_true',
+                        help='Mark build output as nightly build')
+    parser.add_argument('--update',
+                        action='store_true',
+                        help='Update build dependencies prior to building')
+    parser.add_argument('--package',
+                        action='store_true',
+                        help='Package binary output')
+    parser.add_argument('--clean',
+                        action='store_true',
+                        help='Clean output directory before building')
+    parser.add_argument('--no-get',
+                        action='store_true',
+                        help='Do not retrieve pinned dependencies when building')
+    parser.add_argument('--no-stash',
+                        action='store_true',
+                        help='Do not stash uncommitted changes, and fail if uncommitted changes exist')
+    parser.add_argument('--upload',
+                        action='store_true',
+                        help='Upload output packages to AWS S3')
+    parser.add_argument('--upload-overwrite','-w',
+                        action='store_true',
+                        help='Upload output packages to AWS S3')
+    parser.add_argument('--bucket',
+                        metavar='<S3 bucket name>',
+                        type=str,
+                        help='Destination bucket for uploads')
+    parser.add_argument('--generate',
+                        action='store_true',
+                        help='Run "go generate" before building')
+    parser.add_argument('--build-tags',
+                        metavar='<tags>',
+                        help='Optional build tags to use for compilation')    
+    parser.add_argument('--static',
+                        action='store_true',
+                        help='Create statically-compiled binary output')
+    parser.add_argument('--sign',
+                        action='store_true',
+                        help='Create GPG detached signatures for packages (when package is specified)')
+    parser.add_argument('--test',
+                        action='store_true',
+                        help='Run tests (does not produce build output)')
+    parser.add_argument('--no-vet',
+                        action='store_true',
+                        help='Do not run "go vet" when running tests')
+    parser.add_argument('--race',
+                        action='store_true',
+                        help='Enable race flag for build output')
+    parser.add_argument('--parallel',
+                        metavar='<num threads>',
+                        type=int,
+                        help='Number of tests to run simultaneously')
+    parser.add_argument('--timeout',
+                        metavar='<timeout>',
+                        type=int,
+                        help='Timeout for tests before failing')
+    args = parser.parse_args()
+    LOG_LEVEL = logging.INFO
     if '--debug' in sys.argv[1:]:
         LOG_LEVEL = logging.DEBUG
     log_format = '[%(levelname)s] %(funcName)s: %(message)s'
     logging.basicConfig(level=LOG_LEVEL,
                         format=log_format)
-    sys.exit(main())
+    print_banner()
+    sys.exit(main(args))
