@@ -639,7 +639,11 @@ def main(args):
     check_environ()
     if not check_prereqs():
         return 1
-
+    if args.build_tags is None:
+        args.build_tags = []
+    else:
+        args.build_tags = args.build_tags.split(',')
+    
     commit = get_current_commit(short=True)
     branch = get_current_branch()
     if args.arch is None:
@@ -706,7 +710,7 @@ def main(args):
                          race=args.race,
                          clean=args.clean,
                          outdir=od,
-                         tags=args.build_tags.split(','),
+                         tags=args.build_tags,
                          static=args.static):
                 return 1
             build_output.get(platform).update( { arch : od } )
