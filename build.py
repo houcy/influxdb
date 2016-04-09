@@ -488,6 +488,8 @@ def build(version=None,
     return True
 
 def generate_md5_from_file(path):
+    """Generate MD5 signature based on the contents of the file at path.
+    """
     m = hashlib.md5()
     with open(path, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -495,6 +497,8 @@ def generate_md5_from_file(path):
     return m.hexdigest()
 
 def generate_sig_from_file(path):
+    """ Generate a detached GPG signature from the file at path.
+    """
     logging.debug("Generating GPG signature for file: {}".format(path))
     gpg_path = check_path_for('gpg')
     if gpg_path is None:
@@ -507,6 +511,8 @@ def generate_sig_from_file(path):
     return True
 
 def build_packages(build_output, version, nightly=False, rc=None, iteration=1, static=False):
+    """ Package the output of the build process.
+    """
     outfiles = []
     tmp_build_dir = create_temp_dir()
     logging.debug("Packaging for build output: {}".format(build_output))
