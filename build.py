@@ -87,7 +87,7 @@ targets = {
 supported_builds = {
     'darwin': [ "amd64", "i386" ],
     'windows': [ "amd64", "i386" ],
-    'linux': [ "amd64", "i386", "armhf", "arm64", "armel" ]
+    'linux': [ "amd64", "i386", "armhf", "arm64", "armel", "static_i386", "static_amd64" ]
 }
 
 supported_packages = {
@@ -261,6 +261,11 @@ def get_system_arch():
     arch = os.uname()[4]
     if arch == "x86_64":
         arch = "amd64"
+    elif arch == "386":
+        arch = "i386"
+    elif 'arm' in arch:
+        # Prevent uname from reporting full ARM arch (eg 'armv7l')
+        arch = "arm"
     return arch
 
 def get_system_platform():
@@ -389,6 +394,19 @@ def run_tests(race, parallel, timeout, no_vet):
     logging.debug("Test output:\n{}".format(output.encode('ascii', 'ignore')))
     return True
 
+def build_target(target,
+                 version=None,
+                 platform=None,
+                 arch=None,
+                 race=None,
+                 output_dir=".",
+                 build_tags=[],
+                 build_static=False):
+    """ Compile the specified build target.
+    """
+    logging.info("Building target: {}".format(target))
+    pass
+
 def build(version=None,
           platform=None,
           arch=None,
@@ -402,8 +420,9 @@ def build(version=None,
     """ Build each target for the specified architecture and platform.
     """
     logging.info("Starting build for {}/{}...".format(platform, arch))
-    logging.info("Using commit: {}".format(get_current_commit()))
-    logging.info("Using branch: {}".format(get_current_branch()))
+    logging.info("Using Go version: {}".format(get_go_version()))
+    logging.info("Using git branch: {}".format(get_current_branch()))
+    logging.info("Using git commit: {}".format(get_current_commit()))
     if static:
         logging.info("Using statically-compiled output.")
     if race:
@@ -414,8 +433,8 @@ def build(version=None,
     logging.info("Sending build output to: {}".format(outdir))
     if not os.path.exists(outdir):
         os.makedirs(outdir)
-    elif clean and outdir != '/':
-        logging.info("Cleaning build directory.")
+    elif clean and outdir != '/' and outdir != ".":
+        logging.info("Cleaning build directory '{}' before building.".format(outdir))
         shutil.rmtree(outdir)
         os.makedirs(outdir)
 
@@ -425,40 +444,42 @@ def build(version=None,
     logging.info("Using version '{}' for build.".format(version))
 
     tmp_build_dir = create_temp_dir()
-    for b, c in targets.items():
-        logging.info("Building target: {}".format(b))
+    for target, path in targets.items():
+        logging.info("Building target: {}".format(target))
         build_command = ""
-        if static:
+
+        # Handle static binary output
+        if static is True or "static_" in arch:
+            if "static_" in arch:
+                static = True
+                arch = arch.replace("_static", "")
             build_command += "CGO_ENABLED=0 "
-        if "arm" in arch:
-            build_command += "GOOS={} GOARCH={} ".format(platform, "arm")
-        else:
-            if arch == 'i386':
-                arch = '386'
-            elif arch == 'x86_64':
-                arch = 'amd64'
-            build_command += "GOOS={} GOARCH={} ".format(platform, arch)
+
+        # Handle variations in architecture output
+        if arch == "i386" or arch == "i686":
+            arch = "386"
+        build_command += "GOOS={} GOARCH={} ".format(platform, arch)
+
         if "arm" in arch:
             if arch == "armel":
                 build_command += "GOARM=5 "
             elif arch == "armhf" or arch == "arm":
                 build_command += "GOARM=6 "
             elif arch == "arm64":
+                # TODO(rossmcdonald) - Verify this is the correct setting for arm64
                 build_command += "GOARM=7 "
             else:
                 logging.error("Invalid ARM architecture specified: {}".format(arch))
                 logging.error("Please specify either 'armel', 'armhf', or 'arm64'.")
                 return False
         if platform == 'windows':
-            build_command += "go build -o {} ".format(os.path.join(outdir, b + '.exe'))
-        else:
-            build_command += "go build -o {} ".format(os.path.join(outdir, b))
+            target = target + '.exe'
+        build_command += "go build -o {} ".format(os.path.join(outdir, target))
         if race:
             build_command += "-race "
         if len(tags) > 0:
             build_command += "-tags {} ".format(','.join(tags))
-        go_version = get_go_version()
-        if "1.4" in go_version:
+        if "1.4" in get_go_version():
             if static:
                 build_command += "-ldflags=\"-s -X main.version {} -X main.branch {} -X main.commit {}\" ".format(version,
                                                                                                                   get_current_branch(),
@@ -469,7 +490,7 @@ def build(version=None,
                                                                                                                get_current_commit())
 
         else:
-            # With Go 1.5, the linker flag arguments changed to 'name=value' from 'name value'
+            # Starting with Go 1.5, the linker flag arguments changed to 'name=value' from 'name value'
             if static:
                 build_command += "-ldflags=\"-s -X main.version={} -X main.branch={} -X main.commit={}\" ".format(version,
                                                                                                                   get_current_branch(),
@@ -480,7 +501,7 @@ def build(version=None,
                                                                                                                get_current_commit())
         if static:
             build_command += "-a -installsuffix cgo "
-        build_command += c
+        build_command += path
         start_time = datetime.utcnow()
         run(build_command, shell=True)
         end_time = datetime.utcnow()
@@ -657,8 +678,8 @@ def main(args):
     global PACKAGE_NAME
 
     if args.version is None:
-        args.version = get_current_version()        
-    
+        args.version = get_current_version()
+
     if args.nightly and args.rc:
         logging.error("Cannot be both a nightly and a release candidate.")
         return 1
@@ -680,26 +701,13 @@ def main(args):
         args.build_tags = []
     else:
         args.build_tags = args.build_tags.split(',')
-    
+
     commit = get_current_commit(short=True)
     branch = get_current_branch()
-    if args.arch is None:
-        system_arch = get_system_arch()
-        if 'arm' in system_arch:
-            # Prevent uname from reporting ARM arch (eg 'armv7l')
-            args.arch = "arm"
-        else:
-            args.arch = system_arch
-            if args.arch == '386':
-                args.arch = 'i386'
-            elif args.arch == 'x86_64':
-                args.arch = 'amd64'
-    if args.platform:
-        if args.platform not in supported_builds and args.platform != 'all':
-            logging.error("Invalid build platform: {}".format(target_platform))
-            return 1
-    else:
-        args.platform = get_system_platform()
+
+    if args.platform not in supported_builds and args.platform != 'all':
+        logging.error("Invalid build platform: {}".format(target_platform))
+        return 1
 
     build_output = {}
 
@@ -796,10 +804,12 @@ if __name__ == '__main__':
     parser.add_argument('--arch',
                         metavar='<amd64|i386|armhf|arm64|armel|all>',
                         type=str,
+                        default=get_system_arch(),
                         help='Target architecture for build output')
     parser.add_argument('--platform',
                         metavar='<linux|darwin|windows|all>',
                         type=str,
+                        default=get_system_platform(),
                         help='Target platform for build output')
     parser.add_argument('--version',
                         metavar='<version>',
@@ -824,7 +834,7 @@ if __name__ == '__main__':
     parser.add_argument('--stats-db',
                         metavar='<database name>',
                         type=str,
-                        help='Send build stats to InfluxDB using provided database name')    
+                        help='Send build stats to InfluxDB using provided database name')
     parser.add_argument('--nightly',
                         action='store_true',
                         help='Mark build output as nightly build')
@@ -858,7 +868,7 @@ if __name__ == '__main__':
                         help='Run "go generate" before building')
     parser.add_argument('--build-tags',
                         metavar='<tags>',
-                        help='Optional build tags to use for compilation')    
+                        help='Optional build tags to use for compilation')
     parser.add_argument('--static',
                         action='store_true',
                         help='Create statically-compiled binary output')
