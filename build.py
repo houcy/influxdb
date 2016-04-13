@@ -892,7 +892,7 @@ if __name__ == '__main__':
                         help='Number of tests to run simultaneously')
     parser.add_argument('--timeout',
                         metavar='<timeout>',
-                        type=int,
+                        type=str,
                         help='Timeout for tests before failing')
     args = parser.parse_args()
     LOG_LEVEL = logging.INFO
