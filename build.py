@@ -213,6 +213,18 @@ def create_temp_dir(prefix = None):
     else:
         return tempfile.mkdtemp(prefix=prefix)
 
+def increment_minor_version(version):
+    """ Return the version with the minor version incremented.
+    """
+    ver_list = version.split('.')
+    if len(ver_list) != 3:
+        logging.debug("Could not determine how to increment version: {}".format(version))
+        return version
+    ver_list[1] = str(int(ver_list[1]) + 1)
+    inc_version = '.'.join(ver_list)
+    logging.debug("Incremented version from '{}' to '{}'.".format(version, inc_version))
+    return inc_version
+
 def get_current_version_tag():
     """ Retrieve the raw git version tag.
     """
@@ -327,7 +339,7 @@ def upload_packages(packages, bucket_name=None, overwrite=False):
         import boto
         from boto.s3.key import Key
     except ImportError:
-        logging.warn("Cannot upload packages without 'boto' Python library! Skipping.")
+        logging.warn("Cannot upload packages without 'boto' Python library!")
         return False
     logging.info("Connecting to S3.")
     c = boto.connect_s3()
@@ -393,19 +405,6 @@ def run_tests(race, parallel, timeout, no_vet):
     output = run(test_command)
     logging.debug("Test output:\n{}".format(output.encode('ascii', 'ignore')))
     return True
-
-def build_target(target,
-                 version=None,
-                 platform=None,
-                 arch=None,
-                 race=None,
-                 output_dir=".",
-                 build_tags=[],
-                 build_static=False):
-    """ Compile the specified build target.
-    """
-    logging.info("Building target: {}".format(target))
-    pass
 
 def build(version=None,
           platform=None,
@@ -687,6 +686,7 @@ def main(args):
     if args.nightly:
         # In order to cleanly delineate nightly version, we are adding the epoch timestamp
         # to the version so that version numbers are always greater than the previous nightly.
+        args.version = increment_minor_version(args.version)
         args.version = "{}~n{}".format(args.version,
                                        datetime.utcnow().strftime("%Y%m%d%H%M"))
         args.iteration = 0
@@ -781,10 +781,9 @@ def main(args):
             packages += sigs
         if args.upload:
             logging.debug("Files staged for upload: {}".format(packages))
-            if args.nightly or args.upload_overwrite:
-                upload_packages(packages, bucket_name=upload_bucket, overwrite=True)
-            else:
-                upload_packages(packages, bucket_name=upload_bucket, overwrite=False)
+            if args.nightly:
+                args.upload_overwrite = True
+            upload_packages(packages, bucket_name=upload_bucket, overwrite=args.upload_overwrite)
     return 0
 
 if __name__ == '__main__':
@@ -837,7 +836,7 @@ if __name__ == '__main__':
                         help='Send build stats to InfluxDB using provided database name')
     parser.add_argument('--nightly',
                         action='store_true',
-                        help='Mark build output as nightly build')
+                        help='Mark build output as nightly build (will incremement the minor version)')
     parser.add_argument('--update',
                         action='store_true',
                         help='Update build dependencies prior to building')
