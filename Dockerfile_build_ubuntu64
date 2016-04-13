@@ -5,16 +5,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     software-properties-common \
     wget \
     git \
-    mercurial \
-    make \
-    ruby \
-    ruby-dev \
-    rpm \
-    zip \
-    python \
-    python-boto
-
-RUN gem install fpm
+    python
 
 # Install go
 ENV GOPATH /root/go
