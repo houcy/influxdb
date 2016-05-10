@@ -177,17 +177,29 @@ func (c *Cache) WriteMulti(values map[string][]Value) error {
 	}
 	c.mu.RUnlock()
 
-	c.mu.Lock()
 	for k, v := range values {
-		c.write(k, v)
+		c.entry(k).add(v)
 	}
-	c.size = newSize
+
+	c.mu.Lock()
+	c.size += uint64(totalSz)
 	c.mu.Unlock()
 
 	// Update the memory size stat
 	c.updateMemSize(int64(totalSz))
 
 	return nil
+}
+
+func (c *Cache) entry(key string) *entry {
+	c.mu.Lock()
+	e, ok := c.store[key]
+	if !ok {
+		e = newEntry()
+		c.store[key] = e
+	}
+	c.mu.Unlock()
+	return e
 }
 
 // Snapshot will take a snapshot of the current cache, add it to the slice of caches that
