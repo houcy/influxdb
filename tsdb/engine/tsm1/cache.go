@@ -181,7 +181,7 @@ func (c *Cache) WriteMulti(values map[string][]Value) error {
 	for k, v := range values {
 		c.write(k, v)
 	}
-	c.size = newSize
+	c.size += uint64(totalSz)
 	c.mu.Unlock()
 
 	// Update the memory size stat
